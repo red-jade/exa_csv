@@ -180,7 +180,7 @@ defmodule Exa.Csv.CsvWriter do
     row(io, vals, omap)
   end
 
-  @spec row(I.indent(), [C.values()], map()) :: I.indent()
+  @spec row(I.indent(), [C.value()], map()) :: I.indent()
   defp row(io, [v1 | rest], omap) do
     io
     |> newl()

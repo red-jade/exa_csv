@@ -5,6 +5,8 @@ defmodule Exa.Csv.CsvReader do
   import Exa.Types
   alias Exa.Types, as: E
 
+  alias Exa.Parse, as: P
+
   import Exa.Csv.Types
   alias Exa.Csv.Types, as: C
 
@@ -21,6 +23,7 @@ defmodule Exa.Csv.CsvReader do
 
   See `decode` for descritption of the `:options`.
   """
+  @dialyzer {:nowarn_function, from_file: 2}
   @spec from_file(String.t(), E.options()) :: C.read_csv() | {:error, any()}
   def from_file(filename, opts \\ []) when is_nonempty_string(filename) do
     case Exa.File.from_file_text(filename) do
@@ -115,12 +118,13 @@ defmodule Exa.Csv.CsvReader do
     and all records will be returned as Maps with 1-based integer keys.
 
   - `:nulls` a list of case-insensitive string values 
-    that will be converted to `nil`.
-    The default is `${@nulls}`.
-    Handling of nulls can be extended by providing a custom parser.
+    that will be converted to `nil` by the default parser (`Exa.Parse.guess()`).
+    The default values are: `${@nulls}`.
+    Handling of nulls can be extended by providing custom parsers.
 
   - `:parsers` a map of parser functions for specific columns. 
-    The key is a column name converted to an atom.
+    The key is a column name converted to an atom,
+    or a 0-based index of the column number.
     The parser function must be `(String.t() -> any())`.
     A `nil` argument should be passed through as a `nil` result.
     Any errors will be caught and replaced with the value `{:error, input}`.
@@ -137,18 +141,23 @@ defmodule Exa.Csv.CsvReader do
     index = Option.get_bool(opts, :index, false)
     fac = Keyword.get(opts, :object, nil)
 
+    # facfun is map, :list, or factory function
     facfun =
       cond do
         index ->
+          # index true means prepare a map of parsers
           &Map.new/1
 
         is_nil(fac) ->
+          # false index and no factory function, so just list
           :list
 
         is_function(fac, 1) ->
+          # explicit factory function
           fac
 
         is_module(fac) and function_exported?(fac, :new, 1) ->
+          # factory function is module with 'new' function
           &fac.new/1
 
         true ->
@@ -179,29 +188,38 @@ defmodule Exa.Csv.CsvReader do
 
     nheader = length(headers)
 
+    # keys is :index, :list, list of header atoms, or list of integers
     # convert string names to atoms keys for keyword/map/struct access
     # index overrides column names
     # if we know the number of columns, generate the index keys
     # otherwise tag :index and use length of the first row
     keys =
       cond do
-        index and nheader > 0 -> 1..nheader
-        index -> :index
-        headers != [] -> Enum.map(headers, &Exa.String.to_atom/1)
-        true -> :list
+        index and nheader > 0 ->
+          1..nheader
+
+        index ->
+          :index
+
+        headers != [] ->
+          Enum.map(headers, fn
+            h when is_atom(h) -> h
+            h when is_string(h) -> h |> String.downcase() |> Exa.String.to_atom()
+          end)
+
+        true ->
+          :list
       end
 
     omap = %{
       :delim => delim,
-      :parnull => Parse.null(nulls),
       :pardef => Parse.guess(nulls),
       :facfun => facfun,
       :keys => keys,
       :parsers => parsers
     }
 
-    # return atom keys or string cols?
-    {:csv, rows(csv, omap, []), keys}
+    rows(csv, omap, [])
   end
 
   # ------
@@ -209,9 +227,9 @@ defmodule Exa.Csv.CsvReader do
   # ------
 
   # read a list of objects from the rows of the csv up to EOF
-  @spec rows(String.t(), map(), C.records()) :: C.records()
+  @spec rows(String.t(), map(), C.records()) :: C.read_csv()
 
-  defp rows(<<>>, _omap, rows), do: Enum.reverse(rows)
+  defp rows(<<>>, omap, rows), do: {:csv, Enum.reverse(rows), omap.keys}
 
   defp rows(csv, omap, rows) do
     {vals, rest} = vals(omap.delim, csv, [])
@@ -219,56 +237,58 @@ defmodule Exa.Csv.CsvReader do
     # use first row to set the number of columns
     omap =
       if omap.keys == :index do
-        %{omap | :keys => Range.to_list(1..length(vals))}
+        %{omap | :keys => Range.to_list(0..(length(vals) - 1))}
       else
         omap
       end
 
     if omap.keys != :list and length(omap.keys) != length(vals) do
-      IO.inspect(omap.keys, limit: :infinity)
-      IO.inspect(vals, limit: :infinity)
-
       msg =
         "Mismatch number of columns, " <>
           "expect #{length(omap.keys)}, found #{length(vals)}"
 
+      Logger.info("Keys #{inspect(omap.keys, limit: :infinity)}")
+      Logger.info("Vals #{inspect(vals, limit: :infinity)}")
       Logger.error(msg)
       raise ArgumentError, message: msg
     end
 
     obj =
       vals
-      |> parse(omap.keys, omap.parnull, omap.pardef, omap.parsers, [])
+      |> parse(omap.keys, omap.pardef, omap.parsers, [])
       |> build(omap.keys, omap.facfun)
 
     rows(rest, omap, [obj | rows])
   end
 
   # parse the values for nil and custom types
-  @spec parse([C.value()], [atom()], P.par_fun(), P.par_fun(), %{atom() => P.par_fun()}, [any()]) ::
+  @spec parse([C.value()], C.keys(), P.parfun(any()), %{C.key() => P.parfun(any())}, [any()]) ::
           [any()]
 
-  defp parse([], _, _, _, _, pvals), do: Enum.reverse(pvals)
+  defp parse([], _, _, _, pvals), do: Enum.reverse(pvals)
 
-  defp parse([v | vals], keys, parnull, pardef, parsers, pvals) do
-    kpar =
-      case keys do
-        :list -> nil
-        _ -> Map.get(parsers, hd(keys), nil)
-      end
+  defp parse([v | vals], :list, pardef, parsers, pvals) do
+    pv = do_parse(v, nil, pardef)
+    parse(vals, :list, pardef, parsers, [pv | pvals])
+  end
 
-    pv =
-      try do
-        if is_nil(kpar), do: pardef.(v), else: kpar.(parnull.(v))
-      rescue
-        _ -> {:error, v}
-      end
+  defp parse([v | vals], [k | keys], pardef, parsers, pvals) do
+    kpar = Map.get(parsers, k, nil)
+    pv = do_parse(v, kpar, pardef)
+    parse(vals, keys, pardef, parsers, [pv | pvals])
+  end
 
-    parse(vals, keys, parnull, pardef, parsers, [pv | pvals])
+  @spec do_parse(C.value(), nil | P.parfun(any()), P.parfun(any())) :: any()
+  defp do_parse(v, kpar, pardef) do
+    if is_nil(kpar), do: pardef.(v), else: kpar.(v)
+  rescue
+    err ->
+      Logger.error("Parser error: #{inspect(err)}")
+      {:error, v}
   end
 
   # read a list of values in one row of the csv up to EOL or EOF
-  @spec vals(char(), String.t(), [C.value()]) :: [C.value()]
+  @spec vals(char(), String.t(), [C.value()]) :: {[C.value()], binary()}
 
   # subsequent columns have a leading delimiter
   defp vals(d, <<d::utf8, ?", rest::binary>>, vals) do
