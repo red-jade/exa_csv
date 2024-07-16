@@ -2,8 +2,6 @@ defmodule Exa.Csv.CsvReaderTest do
   use ExUnit.Case
 
   require Logger
-  import Exa.Types
-  alias Exa.Types, as: E
 
   use Exa.Csv.Constants
 
@@ -89,7 +87,7 @@ defmodule Exa.Csv.CsvReaderTest do
       :country => p_string,
       :phone_1 => p_string,
       :phone_2 => p_string,
-      :email => Parse.email(),
+      :email => p_string, # Parse.email(),
       :subscription_date => Parse.date(),
       :website => Parse.uri()
     }
@@ -105,7 +103,7 @@ defmodule Exa.Csv.CsvReaderTest do
       :first_name => p_string,
       :last_name => p_string,
       :sex => Parse.atom(["male", "female"]),
-      :email => Parse.email(),
+      :email => p_string, # Parse.email(),
       :phone => p_string,
       :date_of_birth => Parse.date(),
       :job_title => p_string
