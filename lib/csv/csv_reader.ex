@@ -2,6 +2,9 @@ defmodule Exa.Csv.CsvReader do
   @moduledoc "Utilities to parse CSV format."
 
   require Logger
+
+  use Exa.Constants
+
   import Exa.Types
   alias Exa.Types, as: E
 
@@ -13,7 +16,11 @@ defmodule Exa.Csv.CsvReader do
   alias Exa.Option
   alias Exa.Parse
 
+  # TODO - remove after next revision of core Exa.Constants
   @nulls ["", "null", "nil", "nan", "inf"]
+
+  @typedoc "A map of column keys to specific parsers."
+  @type parsers() :: %{C.key() => P.parfun(any())}
 
   @doc """
   Read a CSV file.
@@ -148,13 +155,13 @@ defmodule Exa.Csv.CsvReader do
     parsers = Option.get_map(opts, :parsers, %{})
 
     # index overrides factory
-    index = Option.get_bool(opts, :index, false)
+    index? = Option.get_bool(opts, :index, false)
     fac = Keyword.get(opts, :object, nil)
 
     # facfun is map, :list, or factory function
     facfun =
       cond do
-        index ->
+        index? ->
           # index true means prepare a map of parsers
           &Map.new/1
 
@@ -180,39 +187,23 @@ defmodule Exa.Csv.CsvReader do
     head = Option.get_bool(opts, :header, false)
     cols = Option.get_list_nonempty_name(opts, :columns, [])
 
-    {headers, csv} =
-      if head do
-        vals(delim, csv, [])
-      else
-        {cols, csv}
-      end
-
-    if cols != [] and headers != [] do
-      # TODO - compare cols options with actual header strings?
-      if length(cols) != length(headers) do
-        msg = "Column header mismatch, expected #{cols}, found #{headers}"
-        Logger.error(msg)
-        raise ArgumentError, message: msg
-      end
-    end
-
-    nheader = length(headers)
+    {hdrs, csv} = headers(head, delim, csv, cols)
 
     # keys is :index, :list, list of header atoms, or list of integers
     # convert string names to atoms keys for keyword/map/struct access
-    # index overrides column names
+    # index overrides column names?
     # if we know the number of columns, generate the index keys
     # otherwise tag :index and use length of the first row
     keys =
       cond do
-        index and nheader > 0 ->
-          1..nheader
+        index? and length(hdrs) > 0 ->
+          0..(length(hdrs) - 1)
 
-        index ->
+        index? ->
           :index
 
-        headers != [] ->
-          Enum.map(headers, fn
+        hdrs != [] ->
+          Enum.map(hdrs, fn
             h when is_atom(h) -> h
             h when is_string(h) -> h |> String.downcase() |> Exa.String.to_atom()
           end)
@@ -228,7 +219,6 @@ defmodule Exa.Csv.CsvReader do
       :parsers => parsers,
       :pardef => pardef
     }
-
     rows(csv, omap, [])
   end
 
@@ -236,44 +226,72 @@ defmodule Exa.Csv.CsvReader do
   # parser 
   # ------
 
+  # read a list of headers from the first row of the csv
+  @spec headers(bool(), char(), String.t(), [String.t()]) :: {[String.t()], String.t()}
+
+  defp headers(true, delim, csv, cols) do
+    {hdrs, _} =
+      result =
+      case vals(delim, csv, []) do
+        # ignore empty row
+        {[], rest} -> headers(true, delim, rest, cols)
+        result -> result
+      end
+    # TODO - compare cols options with actual header names?
+    if cols != [] and length(cols) != length(hdrs) do
+      msg = "Column header mismatch, expected #{cols}, found #{hdrs}"
+      Logger.error(msg)
+      raise ArgumentError, message: msg
+    end
+
+    result
+  end
+
+  defp headers(false, _delim, csv, cols), do: {cols, csv}
+
   # read a list of objects from the rows of the csv up to EOF
   @spec rows(String.t(), map(), C.records()) :: C.read_csv()
 
   defp rows(<<>>, omap, rows), do: {:csv, Enum.reverse(rows), omap.keys}
 
   defp rows(csv, omap, rows) do
-    {vals, rest} = vals(omap.delim, csv, [])
+    case vals(omap.delim, csv, []) do
+      # ignore empty row
+      {[], rest} -> rows(rest, omap, rows)
+      {vals, rest} -> 
+        omap = update_keys(vals, omap)
+        rows(rest, omap, [row(vals,omap) | rows])
+    end
+  end
 
-    # use first row to set the number of columns
-    omap =
-      if omap.keys == :index do
-        %{omap | :keys => Range.to_list(0..(length(vals) - 1))}
-      else
-        omap
-      end
+  # use first row to set the number of columns
+  @spec update_keys([C.value()], map()) :: map()
 
-    if omap.keys != :list and length(omap.keys) != length(vals) do
+  defp update_keys(vals, %{:keys => :index} = omap) do
+    %{omap | :keys => Range.to_list(0..(length(vals) - 1))}
+  end
+
+  defp update_keys(_vals, omap), do: omap
+
+  # build a record from values in the row
+  @spec row([C.value()], map()) :: C.record()
+  defp row(vals, o) when vals != [] do
+    if o.keys != :list and length(o.keys) != length(vals) do
       msg =
         "Mismatch number of columns, " <>
-          "expect #{length(omap.keys)}, found #{length(vals)}"
+          "expect #{length(o.keys)}, found #{length(vals)}"
 
-      Logger.info("Keys #{inspect(omap.keys, limit: :infinity)}")
-      Logger.info("Vals #{inspect(vals, limit: :infinity)}")
+      Logger.info("Keys #{inspect(o.keys, limit: 100)}")
+      Logger.info("Vals #{inspect(vals, limit: 100)}")
       Logger.error(msg)
       raise ArgumentError, message: msg
     end
 
-    obj =
-      vals
-      |> parse(omap.keys, omap.pardef, omap.parsers, [])
-      |> build(omap.keys, omap.facfun)
-
-    rows(rest, omap, [obj | rows])
+    vals |> parse(o.keys, o.pardef, o.parsers, []) |> build(o.keys, o.facfun)
   end
 
   # parse the values for nil and custom types
-  @spec parse([C.value()], C.keys(), P.parfun(any()), %{C.key() => P.parfun(any())}, [any()]) ::
-          [any()]
+  @spec parse([C.value()], C.keys(), P.parfun(any()), parsers(), [any()]) :: [any()]
 
   defp parse([], _, _, _, pvals), do: Enum.reverse(pvals)
 
@@ -334,6 +352,8 @@ defmodule Exa.Csv.CsvReader do
   defp build(vals, keys, facfun), do: keys |> Enum.zip(vals) |> facfun.()
 
   # TODO - ignore whitespace before and after quoted value
+
+  # TODO - handle error when quoted string ends with ""
 
   # read a quoted string up to the close quotes
   # consume any following delimiter, but not EOL or EOF

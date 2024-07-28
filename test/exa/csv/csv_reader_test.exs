@@ -21,7 +21,8 @@ defmodule Exa.Csv.CsvReaderTest do
   defp in_file(name), do: Exa.File.join(@in_dir, name, @filetype_csv)
 
   defp csv_file(name, size) do
-    Exa.File.join(@csv_dir, name <> "-" <> size, [@filetype_csv, @filetype_gz])
+    Exa.File.join(@csv_dir, name <> "-" <> size, @filetype_csv)
+    # , @filetype_gz])
   end
 
   @simple_rows [
@@ -87,7 +88,8 @@ defmodule Exa.Csv.CsvReaderTest do
       :country => p_string,
       :phone_1 => p_string,
       :phone_2 => p_string,
-      :email => p_string, # Parse.email(),
+      # Parse.email(),
+      :email => p_string,
       :subscription_date => Parse.date(),
       :website => Parse.uri()
     }
@@ -103,7 +105,8 @@ defmodule Exa.Csv.CsvReaderTest do
       :first_name => p_string,
       :last_name => p_string,
       :sex => Parse.atom(["male", "female"]),
-      :email => p_string, # Parse.email(),
+      # Parse.email(),
+      :email => p_string,
       :phone => p_string,
       :date_of_birth => Parse.date(),
       :job_title => p_string
@@ -253,7 +256,8 @@ defmodule Exa.Csv.CsvReaderTest do
       for sz <- sizes, into: %{} do
         {"customers-" <> sz,
          fn ->
-           "customers" |> csv_file(sz) |> from_file(header: true, parsers: cpars())
+           "customers" |> csv_file(sz) |> from_file(header: true)
+           # , parsers: cpars())
          end}
       end
 
@@ -261,14 +265,16 @@ defmodule Exa.Csv.CsvReaderTest do
       for sz <- sizes, into: results do
         {"people-" <> sz,
          fn ->
-           "people" |> csv_file(sz) |> from_file(header: true, parsers: ppars())
+           "people" |> csv_file(sz) |> from_file(header: true)
+           # , parsers: ppars())
          end}
       end
 
     for sz <- sizes, into: results do
       {"organizations-" <> sz,
        fn ->
-         "organizations" |> csv_file(sz) |> from_file(header: true, parsers: opars())
+         "organizations" |> csv_file(sz) |> from_file(header: true)
+         # , parsers: opars())
        end}
     end
   end
