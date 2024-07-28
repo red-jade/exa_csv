@@ -49,21 +49,21 @@ defmodule Exa.Csv.CsvReader do
   in the `:columns` option (list of strings or atoms).
 
   If column names are not available in either header or options, 
-  then the second element of the result is `nil`.
+  then the last element of the result is `nil`.
 
   If the `:index` flag is `true` then records will be returned 
-  as Maps indexed by 1-based integers for the column number,
-  and the second element of the result will be an integer sequence.
+  as Maps indexed by 0-based integers for the column number,
+  and the last element of the result will be an integer sequence.
   Note that `index: true` overrides the `:object` factory.
   Otherwise, if there are no column names (hence no object factory),
   and `:index` is false, then records are returned as lists,
-  and the second element of the result will be `:list`.
+  and the last element of the result will be `:list`.
 
   If column names are available, from header or option, 
   then they are: 
   - used to look-up parser functions
   - used as a set of keys to build row records
-  - returned as the second element in the result
+  - returned as the last element in the result
   Column names must be unique.
 
   Column name strings are converted to atom keys by:
@@ -73,13 +73,15 @@ defmodule Exa.Csv.CsvReader do
 
   If column keys are available from column names or `index: true`,
   then individual column parsers can be specified in the `:parsers` option.
-  The parser map is keyed by column key (atom).
+  The parser map is keyed by column key (atom or 0-based integer).
   One or more parsers can be provided, not every column must have a parser.
-  The parser value must be a function `(String.t() -> any)`.
+  The parser value must be a function `(String.t() -> xyz())`.
 
-  If no custom parser is available, then a default parser is invoked,
-  in addition to the basic `nil` substituion mechanism.
-  The default parser tries to identify `true`/`false` booleans, 
+  If no custom parsers are specified, 
+  then a default parser can be provided using the `:pardef` option.
+
+  The default default parser is `Exa.Parse.guess/4`.
+  It will convert `nil` values, then identify booleans, 
   integers, floats, DateTimes, Dates and Times.
   For temporal types, the ISO8601 formats are assumed.
   If any error occurs in a parser, the value is given as
@@ -99,7 +101,7 @@ defmodule Exa.Csv.CsvReader do
 
   Options:
   - `:delim` the character delimiter between fields. 
-    Default: comma `?,`, other common values include `?|` or `?\t`.
+    Default: comma `?,`, other common values include `?|` or `?\\t`.
 
   - `:header` boolean flag to control reading of optional column header line.
     Column names must be unique.
@@ -107,34 +109,42 @@ defmodule Exa.Csv.CsvReader do
   - `:columns` the list of column names (strings or atoms).
     Column names are used: to look-up parsers to read data;
     as keys to build data objects for each row;
-    and returned as the second element of the result. 
+    and returned as the last element of the result. 
     Column names must be unique.
 
-  - `:index` boolean flag to force use of 1-based sequential integers
+  - `:index` boolean flag to force use of 0-based sequential integers
     as the keys for building output data records as Keyword lists.
     This option is useful for files that have no header line,
     and no previously known list of column names.
     If `true` it overrides any `:object` factory method,
-    and all records will be returned as Maps with 1-based integer keys.
-
-  - `:nulls` a list of case-insensitive string values 
-    that will be converted to `nil` by the default parser (`Exa.Parse.guess()`).
-    The default values are: `${@nulls}`.
-    Handling of nulls can be extended by providing custom parsers.
+    and all records will be returned as Maps with 0-based integer keys.
 
   - `:parsers` a map of parser functions for specific columns. 
     The key is a column name converted to an atom,
     or a 0-based index of the column number.
-    The parser function must be `(String.t() -> any())`.
+    The parser function must be `(nil | String.t() -> nil | String.t() | xyz())`.
     A `nil` argument should be passed through as a `nil` result.
+    The function should not raise errors. 
     Any errors will be caught and replaced with the value `{:error, input}`.
-    The function should not throw errors. 
+
+  - `:pardef` a default parser that will be invoked 
+    if there is no specific parser for the column.
+    The parser function must be `(String.t() -> nil | String.t() | any())`.
+
+  - `:nulls` a list of case-insensitive string values 
+    that will be converted to `nil` by the 
+    default default parser (`Exa.Parse.guess/4`).
+    The default values are: `#{@nulls}`.
+    The default default parser will only be invoked when there 
+    is no custom column-specific parser, 
+    and no generic default parser specified in the options.
   """
   @spec decode(String.t(), E.options()) :: C.read_csv()
   def decode(csv, opts \\ []) when is_string(csv) do
     delim = Option.get_char(opts, :delim, ?,)
     nulls = Option.get_list_string(opts, :nulls, [])
     nulls = if nulls == [], do: @nulls, else: Enum.map(nulls, &String.downcase/1)
+    pardef = Option.get_fun(opts, :pardef, Parse.guess(nulls))
     parsers = Option.get_map(opts, :parsers, %{})
 
     # index overrides factory
@@ -213,10 +223,10 @@ defmodule Exa.Csv.CsvReader do
 
     omap = %{
       :delim => delim,
-      :pardef => Parse.guess(nulls),
       :facfun => facfun,
       :keys => keys,
-      :parsers => parsers
+      :parsers => parsers,
+      :pardef => pardef
     }
 
     rows(csv, omap, [])

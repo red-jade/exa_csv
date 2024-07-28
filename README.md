@@ -6,15 +6,12 @@ EXA project index: [exa](https://github.com/red-jade/exa)
 
 Utilities for reading and writing CSV files.
 
-DOT files can be rendered to PNG or SVG, iff GraphViz DOT is installed. 
-
-Module path: `Exa.Dot`
+Module path: `Exa.Csv`
 
 ### Features
 
-- Read CSV files
+- Read CSV files, with configurable parsers and data conversion
 - Write CSV files 
-- Configure parsers and data conversion
 
 ### Benchmarks
 
