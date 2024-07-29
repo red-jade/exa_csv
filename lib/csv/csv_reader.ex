@@ -19,8 +19,21 @@ defmodule Exa.Csv.CsvReader do
   # TODO - remove after next revision of core Exa.Constants
   @nulls ["", "null", "nil", "nan", "inf"]
 
-  @typedoc "A map of column keys to specific parsers."
-  @type parsers() :: %{C.key() => P.parfun(any())}
+  # -----------
+  # local types
+  # -----------
+
+  # map of column keys to specific parsers
+  @typep parsers() :: %{C.key() => P.parfun(any())}
+
+  # column key data type for parser map and output records
+  @typep key_type() :: :atom | :int | :string
+
+  # temporary key type, includes `:index` for update from first row
+  @typep key_vals() :: nil | :index | [C.key()]
+
+  # key data for parser map: type and key values
+  @typep par_data() :: {nil | key_type(), key_vals()}
 
   @doc """
   Read a CSV file.
@@ -37,8 +50,9 @@ defmodule Exa.Csv.CsvReader do
       {:error, _} = err -> err
       text -> text |> Exa.File.bom!() |> decode(opts)
     end
-  rescue
-    err -> {:error, err}
+
+    # rescue
+    #   err -> {:error, err}
   end
 
   @doc """
@@ -88,7 +102,8 @@ defmodule Exa.Csv.CsvReader do
   then a default parser can be provided using the `:pardef` option.
 
   The default default parser is `Exa.Parse.guess/4`.
-  It will convert `nil` values, then identify booleans, 
+  It will convert `nil` values using the optional `:nulls` option
+  or the default set (#{@nulls}). Then it will identify booleans, 
   integers, floats, DateTimes, Dates and Times.
   For temporal types, the ISO8601 formats are assumed.
   If any error occurs in a parser, the value is given as
@@ -120,7 +135,7 @@ defmodule Exa.Csv.CsvReader do
     Column names must be unique.
 
   - `:index` boolean flag to force use of 0-based sequential integers
-    as the keys for building output data records as Keyword lists.
+    as the keys for building output data records.
     This option is useful for files that have no header line,
     and no previously known list of column names.
     If `true` it overrides any `:object` factory method,
@@ -148,156 +163,239 @@ defmodule Exa.Csv.CsvReader do
   """
   @spec decode(String.t(), E.options()) :: C.read_csv()
   def decode(csv, opts \\ []) when is_string(csv) do
+    # the delimiter for the fields in a row
     delim = Option.get_char(opts, :delim, ?,)
+
+    # TODO - change header to be a nonneg int count of rows to ignore
+
+    # if head? is true, then hdrs are read from first non-empty row
+    # else hdrs will be cols
+    # otherwise it will be empty list []
+
+    head? = Option.get_bool(opts, :header, false)
+    cols = Option.get_list_nonempty_name(opts, :columns, [])
+    {hdrs, csv} = headers(head?, delim, csv, cols)
+
+    # options for parsers, there are three levels:
+    # - column-specific parsers
+    # - default parser
+    # - null values for the default-default parser
+
     nulls = Option.get_list_string(opts, :nulls, [])
     nulls = if nulls == [], do: @nulls, else: Enum.map(nulls, &String.downcase/1)
     pardef = Option.get_fun(opts, :pardef, Parse.guess(nulls))
     parsers = Option.get_map(opts, :parsers, %{})
 
-    # index overrides factory
-    index? = Option.get_bool(opts, :index, false)
-    fac = Keyword.get(opts, :object, nil)
+    # get the sequence of parser keys
+    # use the parser map keys to determine type
+    # match with actual col/hdr values
+    # if parsers exist and are indexed with ints
+    # then use number of hdrs to determine int range sequence
+    # if no col/hdr then nhdr==0, so set as :index
+    # so that int keys are calculated from the first row
+    # pkeys will be: nil | :index | [key]
+    # ptype will be: :atom | :string | :int
+    {ptype, pkeys} = pdata = par_keys(parsers, hdrs)
 
-    # facfun is map, :list, or factory function
-    facfun =
-      cond do
-        index? ->
-          # index true means prepare a map of parsers
-          &Map.new/1
+    # TODO - upgrade to Option.get_enum on next revision of Exa core
 
-        is_nil(fac) ->
-          # false index and no factory function, so just list
-          :list
+    # record constructor is either:
+    # - module List forces output to simple list, no new func, no keys
+    # - module with appropriate new/1 function:
+    #   - Keyword overrides outkey type to be atom (must be cols/hdrs)
+    #   - Map, allows any outkey type
+    #   - custom module, allows any outkey type
+    # - specific struct factory function
+    #   overrides outkey type to be atom (must be columns)
+    rec = Keyword.get(opts, :record, List)
 
-        is_function(fac, 1) ->
-          # explicit factory function
-          fac
+    if is_module(rec) and rec != List and not function_exported?(rec, :new, 1) do
+      error("Record factory module #{rec} must export 'new/1' function")
+    end
 
-        is_module(fac) and function_exported?(fac, :new, 1) ->
-          # factory function is module with 'new' function
-          &fac.new/1
+    # output key type for Map record - :int | :atom | :string
+    # atom or string keys must have cols/hdrs source 
+    # defaults to the parser key type
+    outkey = Option.get_atom(opts, :outkey, ptype)
 
-        true ->
-          msg = "Illegal ':object' option '#{fac}'"
-          Logger.error(msg)
-          raise ArgumentError, message: msg
-      end
+    if rec == Map and outkey not in [:int, :atom, :string] do
+      error("Record Map must have valid outkey type: :int, :atom, :string")
+    end
 
-    # TODO - change header to be a nonneg int count of rows to ignore
-    head = Option.get_bool(opts, :header, false)
-    cols = Option.get_list_nonempty_name(opts, :columns, [])
+    # okeys  is  :list | :index | [key]
+    # facfun is  nil | fun/1
 
-    {hdrs, csv} = headers(head, delim, csv, cols)
-
-    # keys is :index, :list, list of header atoms, or list of integers
-    # convert string names to atoms keys for keyword/map/struct access
-    # index overrides column names?
-    # if we know the number of columns, generate the index keys
-    # otherwise tag :index and use length of the first row
-    keys =
-      cond do
-        index? and length(hdrs) > 0 ->
-          0..(length(hdrs) - 1)
-
-        index? ->
-          :index
-
-        hdrs != [] ->
-          Enum.map(hdrs, fn
-            h when is_atom(h) -> h
-            h when is_string(h) -> h |> String.downcase() |> Exa.String.to_atom()
-          end)
-
-        true ->
-          :list
+    {okeys, facfun} =
+      case rec do
+        List -> {:list, nil}
+        Keyword -> {out_keys(:atom, pdata), &Keyword.new/1}
+        Map -> {out_keys(outkey, pdata), &rec.new/1}
+        mod when is_module(mod) -> {out_keys(:atom, pdata), &rec.new/1}
+        fun when is_function(fun, 1) -> {out_keys(:atom, pdata), rec}
+        _ -> error("Illegal options: record '#{rec}' outkey '#{outkey}'")
       end
 
     omap = %{
       :delim => delim,
-      :facfun => facfun,
-      :keys => keys,
       :parsers => parsers,
-      :pardef => pardef
+      :pkeys => pkeys,
+      :pardef => pardef,
+      :okeys => okeys,
+      :facfun => facfun
     }
-    rows(csv, omap, [])
+
+    # okeys is :list | keys()
+    {recs, okeys} = rows(csv, omap, [])
+
+    # allow output of header keys even if records will be lists
+    true = (okeys == :list) or is_list(okeys) 
+    okeys =
+      cond do 
+        okeys == :list and is_list(pkeys) -> out_keys(outkey, pdata)
+        true -> okeys
+      end
+
+    {:csv, recs, okeys}
   end
 
-  # ------
-  # parser 
-  # ------
+  # -----------------
+  # private functions 
+  # -----------------
 
   # read a list of headers from the first row of the csv
-  @spec headers(bool(), char(), String.t(), [String.t()]) :: {[String.t()], String.t()}
+  @spec headers(bool(), char(), String.t(), C.columns()) :: {C.columns(), String.t()}
 
   defp headers(true, delim, csv, cols) do
-    {hdrs, _} =
-      result =
+    {hdrs, rest} =
       case vals(delim, csv, []) do
         # ignore empty row
         {[], rest} -> headers(true, delim, rest, cols)
         result -> result
       end
+
     # TODO - compare cols options with actual header names?
     if cols != [] and length(cols) != length(hdrs) do
-      msg = "Column header mismatch, expected #{cols}, found #{hdrs}"
-      Logger.error(msg)
-      raise ArgumentError, message: msg
+      error("Column header mismatch, expected #{cols}, found #{hdrs}")
     end
 
-    result
+    # specified columns override headers 
+    # as keys for parser look-up, and object output
+    pkeys = if cols != [], do: cols, else: hdrs
+
+    {pkeys, rest}
   end
 
   defp headers(false, _delim, csv, cols), do: {cols, csv}
 
-  # read a list of objects from the rows of the csv up to EOF
-  @spec rows(String.t(), map(), C.records()) :: C.read_csv()
+  # build the keys used to lookup parser
+  # - nil means no keys needed (no parsers to lookup)
+  # - index means use first row to build int range keys
+  # - list of atom, string or int keys, with type
+  @spec par_keys(parsers(), C.columns()) :: par_data()
 
-  defp rows(<<>>, omap, rows), do: {:csv, Enum.reverse(rows), omap.keys}
+  defp par_keys(parsers, _) when parsers == %{}, do: {nil, nil}
+
+  defp par_keys(parsers, hdrs) when is_map(parsers) do
+    mkeys = Map.keys(parsers)
+
+    ptype =
+      cond do
+        Enum.all?(mkeys, &is_atom/1) -> :atom
+        Enum.all?(mkeys, &is_nonneg_int/1) -> :int
+        Enum.all?(mkeys, &is_string/1) -> :string
+        true -> error("Parser keys must be ints, atoms or strings, found #{mkeys}")
+      end
+
+    pkeys =
+      case ptype do
+        :atom when hdrs != [] -> Enum.map(hdrs, &to_downatom/1)
+        :string when hdrs != [] -> Enum.map(hdrs, &to_string/1)
+        :int when hdrs != [] -> Range.to_list(0..(length(hdrs) - 1))
+        :int -> :index
+        _atom_or_string -> error("Keys must be ints if no columns, found #{mkeys}")
+      end
+
+    if not MapSet.subset?(MapSet.new(mkeys), MapSet.new(pkeys)) do
+      error(
+        "Parser keys '#{inspect(mkeys)}', " <>
+          "not in index range or column names '#{inspect(pkeys)}'"
+      )
+    end
+
+    {ptype, pkeys}
+  end
+
+  # convert parser key data to required output key type
+  @spec out_keys(key_type(), par_data()) :: key_vals()
+  defp out_keys(:int, {nil, nil}), do: :index
+  defp out_keys(:int, {:int, :index}), do: :index
+  defp out_keys(:int, {:int, keys}), do: keys
+  defp out_keys(:int, {_, keys}), do: Range.to_list(0..(length(keys) - 1))
+  defp out_keys(:atom, {:atom, keys}), do: keys
+  defp out_keys(:atom, {:string, keys}), do: Enum.map(keys, &to_downatom/1)
+  defp out_keys(:string, {:string, keys}), do: keys
+  defp out_keys(:string, {:atom, keys}), do: Enum.map(keys, &to_string/1)
+
+  defp out_keys(otype, {ptype, _}),
+    do: error("Cannot convert keys from #{ptype} to #{otype}")
+
+  # ------
+  # parser 
+  # ------
+
+  # read a list of objects from the rows of the csv up to EOF
+  @spec rows(String.t(), map(), C.records()) :: {C.records(), :list | C.keys()}
+
+  defp rows(<<>>, omap, rows), do: {Enum.reverse(rows), omap.okeys}
 
   defp rows(csv, omap, rows) do
     case vals(omap.delim, csv, []) do
       # ignore empty row
-      {[], rest} -> rows(rest, omap, rows)
-      {vals, rest} -> 
-        omap = update_keys(vals, omap)
-        rows(rest, omap, [row(vals,omap) | rows])
+      {[], rest} ->
+        rows(rest, omap, rows)
+
+      {vals, rest} ->
+        omap = update_keys(length(vals), omap)
+        rows(rest, omap, [row(vals, omap) | rows])
     end
   end
 
-  # use first row to set the number of columns
-  @spec update_keys([C.value()], map()) :: map()
-
-  defp update_keys(vals, %{:keys => :index} = omap) do
-    %{omap | :keys => Range.to_list(0..(length(vals) - 1))}
+  # use first row to set the number of columns for indexed keys
+  @spec update_keys(E.count1(), map()) :: map()
+  defp update_keys(nval, omap) do
+    ikeys = Range.to_list(0..(nval - 1))
+    omap = if omap.pkeys == :index, do: %{omap | :pkeys => ikeys}, else: omap
+    omap = if omap.okeys == :index, do: %{omap | :okeys => ikeys}, else: omap
+    omap
   end
-
-  defp update_keys(_vals, omap), do: omap
 
   # build a record from values in the row
   @spec row([C.value()], map()) :: C.record()
-  defp row(vals, o) when vals != [] do
-    if o.keys != :list and length(o.keys) != length(vals) do
-      msg =
-        "Mismatch number of columns, " <>
-          "expect #{length(o.keys)}, found #{length(vals)}"
-
-      Logger.info("Keys #{inspect(o.keys, limit: 100)}")
+  defp row(vals, omap) when vals != [] do
+    if omap.okeys != :list and length(omap.okeys) != length(vals) do
+      Logger.info("Keys #{inspect(omap.okeys, limit: 100)}")
       Logger.info("Vals #{inspect(vals, limit: 100)}")
-      Logger.error(msg)
-      raise ArgumentError, message: msg
+
+      error(
+        "Mismatch number of columns, " <>
+          "expect #{length(omap.okeys)}, found #{length(vals)}"
+      )
     end
 
-    vals |> parse(o.keys, o.pardef, o.parsers, []) |> build(o.keys, o.facfun)
+    vals
+    |> parse(omap.pkeys, omap.pardef, omap.parsers, [])
+    |> build(omap.okeys, omap.facfun)
   end
 
   # parse the values for nil and custom types
-  @spec parse([C.value()], C.keys(), P.parfun(any()), parsers(), [any()]) :: [any()]
+  @spec parse(C.values(), nil | C.keys(), P.parfun(any()), parsers(), [any()]) :: [any()]
 
   defp parse([], _, _, _, pvals), do: Enum.reverse(pvals)
 
-  defp parse([v | vals], :list, pardef, parsers, pvals) do
+  defp parse([v | vals], nil, pardef, parsers, pvals) do
+    # no specific parser, just default
     pv = do_parse(v, nil, pardef)
-    parse(vals, :list, pardef, parsers, [pv | pvals])
+    parse(vals, nil, pardef, parsers, [pv | pvals])
   end
 
   defp parse([v | vals], [k | keys], pardef, parsers, pvals) do
@@ -347,9 +445,9 @@ defmodule Exa.Csv.CsvReader do
   end
 
   # build objects from the specified keys and list of values from the row
-  @spec build([C.value()], :list | [atom()], :list | Exa.Factory.factory_fun()) :: any()
-  defp build(vals, _, :list), do: vals
-  defp build(vals, keys, facfun), do: keys |> Enum.zip(vals) |> facfun.()
+  @spec build(C.values(), :list | C.keys(), nil | Exa.Factory.factory_fun()) :: any()
+  defp build(vals, :list, nil), do: vals
+  defp build(vals, okeys, facfun), do: okeys |> Enum.zip(vals) |> facfun.()
 
   # TODO - ignore whitespace before and after quoted value
 
@@ -371,4 +469,19 @@ defmodule Exa.Csv.CsvReader do
   defp raw(_, <<?\n, _::binary>> = rest, val), do: {val, rest}
   defp raw(d, <<c::utf8, rest::binary>>, val), do: raw(d, rest, <<val::binary, c::utf8>>)
   defp raw(_, <<>>, val), do: {val, <<>>}
+
+  # convert a name (atom or String) to a String
+  @spec to_downatom(E.name()) :: atom()
+
+  defp to_downatom(a) when is_atom(a), do: a
+
+  defp to_downatom(s) when is_string(s) do
+    s |> Exa.String.sanitize!() |> String.downcase() |> String.to_atom()
+  end
+
+  # move this into Exa core 
+  defp error(msg) do
+    Logger.error(msg)
+    raise ArgumentError, message: msg
+  end
 end

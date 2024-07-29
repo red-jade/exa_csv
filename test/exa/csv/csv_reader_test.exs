@@ -37,16 +37,21 @@ defmodule Exa.Csv.CsvReaderTest do
     [{~U[2023-12-15 09:42:13.875000Z], 0}, ~D[2023-12-15], ~T[09:42:13.875000]]
   ]
 
-  @header_rows [
-    ["abcd", 99, nil, :bar, false],
-    ["abc ghi", 5, 0.0, nil, true]
+  # @header_rows [
+  #   ["abcd", 99, nil, :bar, false],
+  #   ["abc ghi", 5, 0.0, nil, true]
+  # ]
+
+  @header_amaps [
+    %{:string => "abcd", :int => 99, :float => nil, :atom => :bar, :bool => false},
+    %{:string => "abc ghi", :int => 5, :float => 0.0, :atom => nil, :bool => true}
   ]
 
   # CSV output ---------
 
   test "simple" do
     ixs = Range.to_list(0..4)
-    {:csv, csv, ^ixs} = "simple" |> in_file() |> from_file(index: true)
+    {:csv, csv, ^ixs} = "simple" |> in_file() |> from_file(record: Map, outkey: :int)
     assert @simple_rows = csv
   end
 
@@ -67,9 +72,12 @@ defmodule Exa.Csv.CsvReaderTest do
       :bool => Parse.bool()
     }
 
-    {:csv, csv, ^keys} = "header" |> in_file() |> from_file(header: true, parsers: pars)
+    {:csv, csv, ^keys} =
+      "header"
+      |> in_file()
+      |> from_file(header: true, parsers: pars, record: Map, outkey: :atom)
 
-    assert @header_rows = csv
+    assert @header_amaps = csv
   end
 
   # same input files with/without benchmarking ----------
@@ -84,7 +92,7 @@ defmodule Exa.Csv.CsvReaderTest do
       :last_name => p_string,
       :company => p_string,
       :city => p_string,
-      # TODO - ISO country parser?
+      # TODO - ISO country parser? exa_i18n
       :country => p_string,
       :phone_1 => p_string,
       :phone_2 => p_string,
@@ -133,7 +141,10 @@ defmodule Exa.Csv.CsvReaderTest do
     # functional test just one size
     sz = "100"
 
-    {:csv, cust, ccols} = "customers" |> csv_file(sz) |> from_file(header: true, parsers: cpars())
+    {:csv, cust, ccols} =
+      "customers"
+      |> csv_file(sz)
+      |> from_file(header: true, parsers: cpars(), record: List, outkey: :atom)
 
     assert ccols == [
              :index,

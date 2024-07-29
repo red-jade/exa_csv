@@ -143,6 +143,7 @@ defmodule Exa.Csv.CsvWriter do
     raise ArgumentError, message: msg
   end
 
+  @dialyzer {:nowarn_function, columns: 1}
   @spec columns(C.record()) :: C.columns()
 
   defp columns(rec) when is_keyword(rec), do: Keyword.keys(rec)
