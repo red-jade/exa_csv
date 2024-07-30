@@ -29,6 +29,7 @@ exa-*.tar
 /tmp
 /test/output
 /test/bench/*.benchee
+/test/input/csv/datablist/*.csv
 
 # files moved aside temporarily
 *.NOT

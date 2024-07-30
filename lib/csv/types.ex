@@ -39,5 +39,5 @@ defmodule Exa.Csv.Types do
   @type records() :: [record()]
 
   @typedoc "The result type for reading a CSV file."
-  @type read_csv() :: {:csv, records(), keys()}
+  @type read_csv() :: {:csv, keys(), records()}
 end

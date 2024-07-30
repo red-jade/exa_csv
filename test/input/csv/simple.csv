@@ -1,5 +1,5 @@
-a,1,3.14,foo,true
-abcd !@#$%^&,99,,bar,false
+abcd,1,3.14,foo,true
+   "!@#$%^&"   ,99,,bar,false
 
 "abc ""def"" g,h,i",5,0.0,nil,
 "abc 

@@ -26,8 +26,8 @@ defmodule Exa.Csv.CsvReaderTest do
   end
 
   @simple_rows [
-    %{0 => "a", 1 => 1, 2 => 3.14, 3 => "foo", 4 => true},
-    %{0 => "abcd !@#$%^&", 1 => 99, 2 => nil, 3 => "bar", 4 => false},
+    %{0 => "abcd", 1 => 1, 2 => 3.14, 3 => "foo", 4 => true},
+    %{0 => "!@#$%^&", 1 => 99, 2 => nil, 3 => "bar", 4 => false},
     %{0 => ~s|abc "def" g,h,i|, 1 => 5, 2 => 0.0, 3 => nil, 4 => nil},
     %{0 => ~s|abc \n ghi|, 1 => -5, 2 => nil, 3 => nil, 4 => true}
   ]
@@ -51,12 +51,26 @@ defmodule Exa.Csv.CsvReaderTest do
 
   test "simple" do
     ixs = Range.to_list(0..4)
-    {:csv, csv, ^ixs} = "simple" |> in_file() |> from_file(record: Map, outkey: :int)
+    {:csv, ^ixs, csv} = "simple" |> in_file() |> from_file(record: Map, outkey: :int)
     assert @simple_rows = csv
   end
 
+  test "quoted error" do
+    assert {:error, %ArgumentError{message: "Missing close quote 'a\" ,b,c"<>_}} =
+             "quoterr1" |> in_file() |> from_file(record: Map, outkey: :int)
+
+    assert {:error, %ArgumentError{message: "Missing close quote 'q,r"<> _}} =
+             "quoterr2" |> in_file() |> from_file(record: Map, outkey: :int)
+
+    assert {:error, %ArgumentError{message: "Missing close quote 'r\""<>_}} =
+             "quoterr3" |> in_file() |> from_file(record: Map, outkey: :int)
+
+    assert {:error, %ArgumentError{message: "Missing close quote 'z\"'"}} =
+             "quoterr4" |> in_file() |> from_file(record: Map, outkey: :int)
+  end
+
   test "datetimes" do
-    {:csv, csv, :list} = "datetimes" |> in_file() |> from_file()
+    {:csv, :list, csv} = "datetimes" |> in_file() |> from_file()
     assert @datetime_rows == csv
   end
 
@@ -72,7 +86,7 @@ defmodule Exa.Csv.CsvReaderTest do
       :bool => Parse.bool()
     }
 
-    {:csv, csv, ^keys} =
+    {:csv, ^keys, csv} =
       "header"
       |> in_file()
       |> from_file(header: true, parsers: pars, record: Map, outkey: :atom)
@@ -141,7 +155,7 @@ defmodule Exa.Csv.CsvReaderTest do
     # functional test just one size
     sz = "100"
 
-    {:csv, cust, ccols} =
+    {:csv, ccols, cust} =
       "customers"
       |> csv_file(sz)
       |> from_file(header: true, parsers: cpars(), record: List, outkey: :atom)
@@ -185,7 +199,7 @@ defmodule Exa.Csv.CsvReaderTest do
              }
            ] == hd(cust)
 
-    {:csv, peop, pcols} = "people" |> csv_file(sz) |> from_file(header: true, parsers: ppars())
+    {:csv, pcols, peop} = "people" |> csv_file(sz) |> from_file(header: true, parsers: ppars())
 
     assert pcols == [
              :index,
@@ -211,7 +225,7 @@ defmodule Exa.Csv.CsvReaderTest do
              "Games developer"
            ] = hd(peop)
 
-    {:csv, orgs, ocols} =
+    {:csv, ocols, orgs} =
       "organizations" |> csv_file(sz) |> from_file(header: true, parsers: opars())
 
     assert ocols == [
