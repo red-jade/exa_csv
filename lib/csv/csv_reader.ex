@@ -52,7 +52,9 @@ defmodule Exa.Csv.CsvReader do
       text -> text |> Exa.File.bom!() |> decode(opts)
     end
   rescue
-    err -> {:error, err}
+    err ->
+      Logger.error("Failed to read file '#{filename}': #{inspect(err)}")
+      {:error, err}
   end
 
   @doc """
@@ -363,7 +365,7 @@ defmodule Exa.Csv.CsvReader do
         _atom_or_string -> error("Keys must be ints if no columns, found #{mkeys}")
       end
 
-    if not MapSet.subset?(MapSet.new(mkeys), MapSet.new(pkeys)) do
+    if is_list(pkeys) and not MapSet.subset?(MapSet.new(mkeys), MapSet.new(pkeys)) do
       error(
         "Parser keys '#{inspect(mkeys)}', " <>
           "not in index range or column names '#{inspect(pkeys)}'"

@@ -56,13 +56,13 @@ defmodule Exa.Csv.CsvReaderTest do
   end
 
   test "quoted error" do
-    assert {:error, %ArgumentError{message: "Missing close quote 'a\" ,b,c"<>_}} =
+    assert {:error, %ArgumentError{message: "Missing close quote 'a\" ,b,c" <> _}} =
              "quoterr1" |> in_file() |> from_file(record: Map, outkey: :int)
 
-    assert {:error, %ArgumentError{message: "Missing close quote 'q,r"<> _}} =
+    assert {:error, %ArgumentError{message: "Missing close quote 'q,r" <> _}} =
              "quoterr2" |> in_file() |> from_file(record: Map, outkey: :int)
 
-    assert {:error, %ArgumentError{message: "Missing close quote 'r\""<>_}} =
+    assert {:error, %ArgumentError{message: "Missing close quote 'r\"" <> _}} =
              "quoterr3" |> in_file() |> from_file(record: Map, outkey: :int)
 
     assert {:error, %ArgumentError{message: "Missing close quote 'z\"'"}} =
