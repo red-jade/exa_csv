@@ -79,11 +79,11 @@ defmodule Exa.Csv.CsvReaderTest do
 
     pars = %{
       # nullable string
-      :string => Parse.null(),
-      :int => Parse.int(),
-      :float => Parse.compose([Parse.null(), Parse.float()]),
-      :atom => Parse.compose([Parse.null(), Parse.atom(["foo", "bar"])]),
-      :bool => Parse.bool()
+      :string => Parse.p_null(),
+      :int => Parse.p_int(),
+      :float => Parse.compose([Parse.p_null(), Parse.p_float()]),
+      :atom => Parse.compose([Parse.p_null(), Parse.p_atom(["foo", "bar"])]),
+      :bool => Parse.p_bool()
     }
 
     {:csv, ^keys, csv} =
@@ -97,11 +97,11 @@ defmodule Exa.Csv.CsvReaderTest do
   # same input files with/without benchmarking ----------
 
   defp cpars() do
-    p_string = Parse.string()
+    p_string = Parse.p_string()
 
     %{
-      :index => Parse.int(),
-      :customer_id => Parse.string(&(String.length(&1) > 0)),
+      :index => Parse.p_int(),
+      :customer_id => Parse.p_string(&(String.length(&1) > 0)),
       :first_name => p_string,
       :last_name => p_string,
       :company => p_string,
@@ -112,42 +112,42 @@ defmodule Exa.Csv.CsvReaderTest do
       :phone_2 => p_string,
       # Parse.email(),
       :email => p_string,
-      :subscription_date => Parse.date(),
-      :website => Parse.uri()
+      :subscription_date => Parse.p_date(),
+      :website => Parse.p_uri()
     }
   end
 
   defp ppars() do
-    p_string = Parse.string()
+    p_string = Parse.p_string()
 
     %{
-      :index => Parse.int(),
+      :index => Parse.p_int(),
       # should use the new Parse.string() here - after roll core version
-      :user_id => Parse.string(&(String.length(&1) > 0)),
+      :user_id => Parse.p_string(&(String.length(&1) > 0)),
       :first_name => p_string,
       :last_name => p_string,
-      :sex => Parse.atom(["male", "female"]),
+      :sex => Parse.p_atom(["male", "female"]),
       # Parse.email(),
       :email => p_string,
       :phone => p_string,
-      :date_of_birth => Parse.date(),
+      :date_of_birth => Parse.p_date(),
       :job_title => p_string
     }
   end
 
   defp opars() do
-    p_string = Parse.string()
+    p_string = Parse.p_string()
 
     %{
-      :index => Parse.int(),
-      :organization_id => Parse.string(&(String.length(&1) > 0)),
+      :index => Parse.p_int(),
+      :organization_id => Parse.p_string(&(String.length(&1) > 0)),
       :name => p_string,
-      :website => Parse.uri(),
+      :website => Parse.p_uri(),
       :country => p_string,
       :description => p_string,
-      :founded => Parse.int(),
+      :founded => Parse.p_int(),
       :industry => p_string,
-      :number_of_employees => Parse.int()
+      :number_of_employees => Parse.p_int()
     }
   end
 

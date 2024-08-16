@@ -135,7 +135,7 @@ defmodule Exa.Csv.CsvReader do
   A default parser can be provided using the `:pardef` option.
 
   If no default parser is provided as an option,
-  then the fallback default parser is `Exa.Parse.guess/4`.
+  then the fallback default parser is `Exa.Parse.p_guess/4`.
   It will convert `nil` values using the optional `:nulls` option
   or use the default set `#{@nulls}`. 
   Then it will identify booleans, 
@@ -145,7 +145,7 @@ defmodule Exa.Csv.CsvReader do
   See `Exa.Parse` for:
   - collection of specific data parsers 
   - `Exa.Parse.compose/1` function to cascade simple parsers
-  - `Exa.Parse.guess/4` that matches many simple types
+  - `Exa.Parse.p_guess/4` that matches many simple types
 
   ## Building Records
 
@@ -195,7 +195,7 @@ defmodule Exa.Csv.CsvReader do
 
   - `:nulls` a list of case-insensitive string values 
     that will be converted to `nil` by the 
-    default default parser (`Exa.Parse.guess/4`).
+    default default parser (`Exa.Parse.p_guess/4`).
     The default values are: `#{@nulls}`.
     The fallback default parser will only be invoked when there 
     is no custom column-specific parser, 
@@ -223,7 +223,7 @@ defmodule Exa.Csv.CsvReader do
 
     nulls = Option.get_list_string(opts, :nulls, [])
     nulls = if nulls == [], do: @nulls, else: Enum.map(nulls, &String.downcase/1)
-    pardef = Option.get_fun(opts, :pardef, Parse.guess(nulls))
+    pardef = Option.get_fun(opts, :pardef, Parse.p_guess(nulls))
     parsers = Option.get_map(opts, :parsers, %{})
 
     # get the sequence of parser keys
