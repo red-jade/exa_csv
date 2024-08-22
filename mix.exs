@@ -131,9 +131,10 @@ defmodule Exa.Csv.MixProject do
   defp exa_project() do
     {
       :exa,
-      # git: "https://github.com/red-jade/exa.git", 
-      # branch: "main",
-      path: "../exa", only: [:dev, :test], runtime: false
+      git: "https://github.com/red-jade/exa.git", 
+      branch: "main",
+      only: [:dev, :test], 
+      runtime: false
     }
   end
 end
