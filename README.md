@@ -12,8 +12,14 @@ Module path: `Exa.Csv`
 
 - Read CSV files, with configurable parsers and data conversion
 - Write CSV files 
+- See `exa_gis` for lat/lon location persers
 
-### Benchmarks
+## Building
+
+To bootstrap an `exa_xxx` library build, 
+you must run `mix deps.get` twice.
+
+## Benchmarks
 
 Exa uses _Benchee_ for performancee testing.
 
@@ -28,7 +34,7 @@ To run specific benchmark test, for example:
 
 `$ mix test --only benchmark:true test/exa/image/image_test.exs`
 
-### Test Data
+## Test Data
 
 Test CSV data downloaded from:<br>
 https://www.datablist.com/learn/csv/download-sample-csv-files
@@ -36,7 +42,7 @@ https://www.datablist.com/learn/csv/download-sample-csv-files
 The scripts to generate those files are available:<br>
 https://github.com/datablist/sample-csv-files
 
-### License
+## EXA License
 
 EXA source code is released under the MIT license.
 
