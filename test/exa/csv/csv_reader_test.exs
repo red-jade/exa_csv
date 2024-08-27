@@ -52,7 +52,7 @@ defmodule Exa.Csv.CsvReaderTest do
   test "simple" do
     ixs = Range.to_list(0..4)
     {:csv, ^ixs, csv} = "simple" |> in_file() |> from_file(record: Map, outkey: :int)
-    assert @simple_rows = csv
+    assert @simple_rows == csv
   end
 
   test "quoted error" do
@@ -91,7 +91,7 @@ defmodule Exa.Csv.CsvReaderTest do
       |> in_file()
       |> from_file(header: true, parsers: pars, record: Map, outkey: :atom)
 
-    assert @header_amaps = csv
+    assert @header_amaps == csv
   end
 
   # same input files with/without benchmarking ----------
