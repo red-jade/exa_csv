@@ -3,7 +3,7 @@ defmodule Exa.Csv.MixProject do
 
   @lib  :exa_csv
   @name "Exa Csv"
-  @ver  "0.2.2"
+  @ver  "0.2.3"
 
   # umbrella project
   @exa {:exa,
