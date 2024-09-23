@@ -21,7 +21,7 @@ defmodule Exa.Csv.CsvWriter do
 
   @doc "Write CSV data to file."
   @spec to_file(C.records(), E.options(), String.t()) :: T.textdata() | {:error, any()}
-  def to_file(recs, opts \\ [], filename) when is_nonempty_string(filename) do
+  def to_file(recs, opts \\ [], filename) when is_string_nonempty(filename) do
     case encode(recs, opts) do
       {:error, _} = err -> err
       text -> Exa.File.to_file_text(text, filename)

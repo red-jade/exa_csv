@@ -46,7 +46,7 @@ defmodule Exa.Csv.CsvReader do
   """
   @dialyzer {:nowarn_function, from_file: 2}
   @spec from_file(String.t(), E.options()) :: C.read_csv() | {:error, any()}
-  def from_file(filename, opts \\ []) when is_nonempty_string(filename) do
+  def from_file(filename, opts \\ []) when is_string_nonempty(filename) do
     case Exa.File.from_file_text(filename) do
       {:error, _} = err -> err
       text -> text |> Exa.File.bom!() |> decode(opts)
@@ -351,7 +351,7 @@ defmodule Exa.Csv.CsvReader do
     ptype =
       cond do
         Enum.all?(mkeys, &is_atom/1) -> :atom
-        Enum.all?(mkeys, &is_nonneg_int/1) -> :int
+        Enum.all?(mkeys, &is_int_nonneg/1) -> :int
         Enum.all?(mkeys, &is_string/1) -> :string
         true -> error("Parser keys must be ints, atoms or strings, found #{mkeys}")
       end
