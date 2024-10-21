@@ -1,9 +1,9 @@
 defmodule Exa.Csv.MixProject do
   use Mix.Project
 
-  @lib  :exa_csv
+  @lib :exa_csv
   @name "Exa Csv"
-  @ver  "0.2.4"
+  @ver "0.3.0"
 
   # umbrella project
   @exa {:exa,
@@ -21,6 +21,7 @@ defmodule Exa.Csv.MixProject do
         if not Code.loaded?(Exa.MixUtil) do
           [{Exa.MixUtil, _}] = Code.compile_file(@mix_util)
         end
+
         Exa.MixUtil.exa_deps(@lib, exa_libs())
       else
         # bootstrap
@@ -34,7 +35,7 @@ defmodule Exa.Csv.MixProject do
       elixir: "~> 1.17",
       erlc_options: [:verbose, :report_errors, :report_warnings, :export_all],
       start_permanent: Mix.env() == :prod,
-      deps: [@exa|exa_deps] ++ local_deps(),
+      deps: [@exa | exa_deps] ++ local_deps(),
       docs: docs(),
       test_pattern: "*_test.exs",
       dialyzer: [flags: [:no_improper_lists]]
@@ -57,15 +58,15 @@ defmodule Exa.Csv.MixProject do
   end
 
   defp exa_libs() do
-    [  
-      :exa_core, 
-      :dialyxir, 
+    [
+      :exa_core,
+      :dialyxir,
       :ex_doc,
-      :benchee,
+      :benchee
     ]
   end
 
-  defp local_deps() do 
+  defp local_deps() do
     [
       # test data ----------
 
