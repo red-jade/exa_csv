@@ -12,12 +12,18 @@ Module path: `Exa.Csv`
 
 - Read CSV files, with configurable parsers and data conversion
 - Write CSV files 
-- See `exa_gis` for lat/lon location persers
+- See `exa_gis` for lat/lon location parsers
 
 ## Building
 
-To bootstrap an `exa_xxx` library build, 
-you must run `mix deps.get` twice.
+**To bootstrap an `exa_xxx` library build,**<br>
+**you must update dependencies twice.**
+
+One way to start a build is:
+```
+  $ mix deps.update exa
+  $ mix deps.get
+```
 
 ## Benchmarks
 
