@@ -26,7 +26,7 @@ defmodule Exa.Csv.MixProject do
     ]
   end
 
-  def docs do
+  defp docs do
     [
       main: "readme",
       output: "doc/api",
